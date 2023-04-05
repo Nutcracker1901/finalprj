@@ -13,7 +13,7 @@ import java.util.Date;
 public class SiteEntity implements Serializable {
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
-    private int id;
+    private long id;
     @Enumerated(EnumType.STRING)
     @Column(columnDefinition = "ENUM('INDEXING', 'INDEXED', 'FAILED')", nullable = false)
     private Status status;

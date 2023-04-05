@@ -12,10 +12,10 @@ import javax.persistence.*;
 public class IndexEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
-    private int id;
-    @ManyToOne(cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    private long id;
+    @ManyToOne(fetch = FetchType.LAZY)
     private PageEntity page;
-    @ManyToOne(cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.LAZY)
     private LemmaEntity lemma;
     @Column(name = "`rank`", columnDefinition = "FLOAT", nullable = false)
     private float rank;
