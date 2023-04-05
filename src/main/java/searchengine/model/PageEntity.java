@@ -8,12 +8,13 @@ import java.io.Serializable;
 
 @Entity
 @Table(name = "page", indexes = @Index(columnList = "path"))
-@Getter@Setter
+@Getter
+@Setter
 public class PageEntity implements Serializable {
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
-    private int id;
-    @ManyToOne(cascade = CascadeType.REMOVE, fetch = FetchType.LAZY)
+    private long id;
+    @ManyToOne(fetch = FetchType.LAZY)
     private SiteEntity site;
     @Column(columnDefinition = "VARCHAR(255)", nullable = false)
     private String path;

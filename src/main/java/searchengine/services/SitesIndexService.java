@@ -1,31 +1,35 @@
 package searchengine.services;
 
+import lombok.Getter;
 import lombok.RequiredArgsConstructor;
-import lombok.SneakyThrows;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.mapping.AccessOptions;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
+import searchengine.Repository.IndexRepository;
 import searchengine.Repository.LemmaRepository;
 import searchengine.Repository.PageRepository;
 import searchengine.Repository.SiteRepository;
 import searchengine.config.Site;
 import searchengine.config.SitesList;
-import searchengine.model.LemmaEntity;
-import searchengine.model.PageEntity;
-import searchengine.model.SiteEntity;
-import searchengine.model.Status;
+import searchengine.dto.error.ErrorResponse;
+import searchengine.dto.success.SuccessResponse;
+import searchengine.model.*;
 
 import javax.persistence.EntityManager;
 import javax.persistence.PersistenceContext;
 import javax.transaction.Transactional;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.TimeUnit;
 
 @Service
 @RequiredArgsConstructor
@@ -37,141 +41,259 @@ public class SitesIndexService {
     private PageRepository pageRepository;
     @Autowired
     private LemmaRepository lemmaRepository;
+    @Autowired
+    private IndexRepository indexRepository;
     @PersistenceContext
     private EntityManager em;
+    private volatile boolean stopFlag = false;
+    @Getter
+    private volatile boolean indexing = false;
     private LemmaFinder lemmaFinder;
 
-//    private SiteEntity findSiteByName(String name) {
-//        return em.createQuery("SELECT a from SiteEntity a where a.name = '" + name + "'", SiteEntity.class).getSingleResult();
-//    }
-//
-    private void deletePagesBySite(SiteEntity site) {
-        em.createQuery("DELETE from PageEntity where site = '" + site + "'", PageEntity.class);
+    public ResponseEntity sitesIndexing() {
+        indexing = true;
+        try {
+            lemmaFinder = LemmaFinder.getInstance();
+        } catch (IOException e) {
+            ErrorResponse response = new ErrorResponse();
+            response.setResult(false);
+            response.setError(e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+        }
+        urlSearcherActive();
+
+        ExecutorService service = Executors.newFixedThreadPool(sites.getSites().size());
+        for (Site value : sites.getSites()) {
+            Runnable task = () -> {
+                SiteEntity site = new SiteEntity();
+                site.setUrl(value.getUrl());
+                site.setName(value.getName());
+                site.setStatus(Status.INDEXING);
+                site.setStatusTime(new Date());
+                siteRepository.saveAndFlush(site);
+
+                if (stopFlag) {
+                    return;
+                }
+                int count = new ForkJoinPool().invoke(new UrlRecursiveSearcher(site, "/", pageRepository, siteRepository));
+
+                if (stopFlag) {
+                    return;
+                }
+
+                site.setStatusTime(new Date());
+                siteRepository.saveAndFlush(site);
+            };
+            service.submit(task);
+        }
+        if (stopFlag) {
+            ErrorResponse response = new ErrorResponse();
+            response.setResult(false);
+            response.setError("Индексация остановлена пользователем");
+            return ResponseEntity.ok(response);
+        }
+
+        ResponseEntity response = untilServiceDone(service);
+        if (response != null) return response;
+
+        service = Executors.newFixedThreadPool(sites.getSites().size());
+
+        List<SiteEntity> siteEntityList = siteRepository.findAll();
+        for (SiteEntity site : siteEntityList) {
+            Runnable task = () -> {
+                if (stopFlag) {
+                    return;
+                }
+                List<PageEntity> pages = pageRepository.findAllBySite(site);
+                for (PageEntity page : pages) {
+                    lemmaIndexing(site, page);
+                }
+
+                site.setStatusTime(new Date());
+                site.setStatus(Status.INDEXED);
+                siteRepository.saveAndFlush(site);
+            };
+            service.submit(task);
+        }
+
+        response = untilServiceDone(service);
+        if (response != null) return response;
+        indexing = false;
+        return ResponseEntity.ok(new SuccessResponse());
     }
 
-    @SneakyThrows
-    public void sitesIndexing() {
-        lemmaFinder = LemmaFinder.getInstance();
+    private ResponseEntity untilServiceDone(ExecutorService service) {
+        try {
+            service.shutdown();
+            if (!service.awaitTermination(30, TimeUnit.MINUTES)) service.shutdownNow();
 
-//        siteRepository.deleteAll();
-//        pageRepository.deleteAll();
-//        lemmaRepository.deleteAll();
-
-        List<Site> sitesList = sites.getSites();
-        List<String> copy = new ArrayList<>();
-//        UrlRecursiveSearcher.setPageRepository(pageRepository);
-
-        for (int i = 0; i < sitesList.size(); i++) {
-            copy.clear();
-            String url = sitesList.get(i).getUrl();
-            copy.add(url);
-
-//            SiteEntity site;
-            SiteEntity site = siteRepository.findByName(sitesList.get(i).getName());
-
-            if (site != null) {
-                System.out.println("sleeeeeeeeeeeeeeeeeeeep");
-//                delete(site);
-//                pageRepository.deletePageEntitiesBySite(site);
-//                lemmaRepository.deleteAllBySite(site);
-//                siteRepository.delete(site);
-//                em.getTransaction().commit();
-//                deletePagesBySite(site);
-//                Thread.sleep(60000);
-            }
-
-//            try {
-//                System.out.println("Test");
-//                site = findSiteByName(site.getName());
-//                System.out.println(site.getId());
-//                deletePagesBySite(site);
-//                siteRepository.deleteById(site.getId());
-//            } catch (Exception e) {
-//                e.getMessage();
-//            }
-
-            site = new SiteEntity();
-            site.setName(sitesList.get(i).getName());
-            site.setUrl(url);
-            site.setStatus(Status.INDEXING);
-            site.setStatusTime(new Date());
-
-            siteRepository.saveAndFlush(site);
-//            em.getTransaction().commit();
-
-//            Thread.sleep(60000);
-
-            System.out.println("AFSGDHJGFDHFGFHGF\n" + site.getId());
-//            UrlRecursiveSearcher.setSite(site);
-            UrlRecursiveSearcher.setSiteUrl(site.getUrl());
-            UrlRecursiveSearcher.setSiteId(site.getId());
-            UrlRecursiveSearcher.setCount(0);
-
-//            String str = new ForkJoinPool().invoke(new UrlRecursiveSearcher(url, copy));
-            List<PageEntity> pageList = new ForkJoinPool().invoke(new UrlRecursiveSearcher(url, copy));
-//            if (pageList != null)
-//            for (PageEntity page : pageList)
-//                try {
-//                    pageRepository.save(page);
-//                } catch (Exception e) {
-//                    e.printStackTrace();
-//                }
-//                pageRepository.saveAll(pageList);
-
-            site.setStatusTime(new Date());
-            site.setStatus(Status.INDEXED);
-
-            siteRepository.save(site);
+        } catch (InterruptedException e) {
+            ErrorResponse response = new ErrorResponse();
+            response.setResult(false);
+            response.setError(e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
         }
+        return null;
     }
 
     @Transactional
-    public void pageIndexing(int siteId, String path, int code, String content) {
-        PageEntity page = new PageEntity();
-//        System.out.println(siteRepository.findById(siteId).get().getId() + "  this is id" + siteRepository.findById(siteId).get().getUrl());
-//        page.setSite(siteRepository.findById(siteId).get());
-//        try {
+    public void deleteIndexed() {
+        indexRepository.deleteAll();
+        lemmaRepository.deleteAll();
 
-//        page.setSite(em.merge(site));
-        page.setSite(siteRepository.findById(siteId).get());
-        page.setPath(path);
-        page.setCode(200);
-        page.setContent(content);
-        pageRepository.saveAndFlush(page);
-        System.out.println("YESSSSSSSSSSSSSSSS");
+        for (Site value : sites.getSites()) {
+            if (siteRepository.existsByName(value.getName())) {
+                SiteEntity site;
+                site = siteRepository.findByName(value.getName());
+                pageRepository.deleteAllBySite(site);
+                siteRepository.delete(site);
+            }
+        }
+    }
 
+    public void lemmaIndexing(SiteEntity site, PageEntity page) {
+        String content = Jsoup.parse(page.getContent()).text();
         Map<String, Integer> result = lemmaFinder.collectLemmas(content);
         LemmaEntity lemma;
         for (Map.Entry<String, Integer> entry : result.entrySet()) {
-            if (lemmaRepository.existsByLemmaAndSite(entry.getKey(), siteRepository.findById(siteId).get())) {
-                lemma = lemmaRepository.findByLemmaAndSite(entry.getKey(), siteRepository.findById(siteId).get());
+            if (stopFlag) {
+                return;
+            }
+            if (lemmaRepository.existsByLemmaAndSite(entry.getKey(), site)) {
+                lemma = lemmaRepository.findByLemmaAndSite(entry.getKey(), site);
             } else {
                 lemma = new LemmaEntity();
                 lemma.setLemma(entry.getKey());
-                lemma.setSite(siteRepository.findById(siteId).get());
+                lemma.setSite(siteRepository.findById(site.getId()).get());
             }
-            lemma.setFrequency(lemma.getFrequency() + entry.getValue());
+            lemma.setFrequency(lemma.getFrequency() + 1);
             lemmaRepository.save(lemma);
+
+            IndexEntity index = new IndexEntity();
+            index.setPage(page);
+            index.setLemma(lemma);
+            index.setRank(entry.getValue());
+            indexRepository.save(index);
         }
+    }
+
+    public ResponseEntity pageIndexing(String url, String path) {
+        try {
+            lemmaFinder = LemmaFinder.getInstance();
+        } catch (IOException e) {
+            ErrorResponse response = new ErrorResponse();
+            response.setResult(false);
+            response.setError(e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+        }
+        SiteEntity site = siteRepository.findByUrl(url);
+
+        Document doc;
+        String content = "";
+        PageEntity page = new PageEntity();
+
+        try {
+            doc = Jsoup.connect(url).get();
+            int code = doc.location().startsWith("https") ? 200 : 404;
+            content = doc.toString();
+            page.setSite(site);
+            page.setPath(path);
+            page.setCode(code);
+            page.setContent(content);
+            pageRepository.saveAndFlush(page);
+        } catch (Exception e) {
+            site.setStatusTime(new Date());
+            site.setStatus(Status.FAILED);
+            ErrorResponse response = new ErrorResponse();
+            response.setResult(false);
+            response.setError(e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+        }
+
+        lemmaIndexing(site, page);
+
+        site.setStatusTime(new Date());
+        site.setStatus(Status.INDEXED);
+        siteRepository.saveAndFlush(site);
+
+        return ResponseEntity.ok(new SuccessResponse());
+    }
+
+    public String IsPageIndexed(String url) {
+        String baseUrl = "";
+        String path = "/";
+        for (Site value : sites.getSites()) {
+            if (url.startsWith(value.getUrl()))
+                baseUrl = url.substring(0, value.getUrl().length());
+            path = url.substring(value.getUrl().length() - 3);
+        }
+        if (!siteRepository.existsByUrl(baseUrl)) {
+            return "";
+        }
+
+        return path;
     }
 
     @Transactional
-    public void pageIndexing(String url) {
-        Document doc;
-        try {
-            doc = Jsoup.connect(url).get();
-            System.out.println(doc.outerHtml() + "\n\n\n\n 1111111111111");
-            System.out.println(doc.absUrl(url) + "\n\n\n\n 2222222222222");
-            System.out.println(doc.baseUri() + "\n\n\n\n 3333333333333");
-        } catch (Exception e) {
-            System.out.println(e.getMessage());
+    public void deleteByPageIndex(String url, String path) {
+        SiteEntity site = siteRepository.findByUrl(url);
+        site.setStatus(Status.INDEXING);
+        site.setStatusTime(new Date());
+        siteRepository.saveAndFlush(site);
+
+        if (pageRepository.existsBySiteAndPath(site, path + "/"))
+            path = path.concat("/");
+
+        if (pageRepository.existsBySiteAndPath(site, path)) {
+            PageEntity page = pageRepository.findBySiteAndPath(site, path);
+            List<LemmaEntity> lemmaList = new ArrayList<>();
+            List<IndexEntity> indexList = indexRepository.findByPage(page);
+            for (IndexEntity index : indexList) {
+                lemmaList.add(index.getLemma());
+            }
+
+            indexRepository.deleteAllByPage(page);
+
+            for (LemmaEntity lemma : lemmaList) {
+                if (lemma.getFrequency() > 1) lemma.setFrequency(lemma.getFrequency() - 1);
+                else lemmaRepository.delete(lemma);
+            }
+
+            pageRepository.delete(page);
         }
     }
 
-    @org.springframework.transaction.annotation.Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void delete(SiteEntity site) {
-        pageRepository.deletePageEntitiesBySite(site);
-        lemmaRepository.deleteAllBySite(site);
-        siteRepository.delete(site);
+    public void stopIndexing() {
+        stopFlag = true;
+        indexing = false;
+        urlSearcherStop();
+    }
+
+    public void indexingActive() {
+        indexing = true;
+        stopFlag = false;
+    }
+
+    public boolean isIndexing() {
+        return indexing;
+    }
+
+    @Transactional
+    public ResponseEntity sitesIndexingStop() {
+        List<SiteEntity> sitesList = siteRepository.findAll();
+        for (SiteEntity site : sitesList) {
+            site.setStatus(Status.FAILED);
+            site.setLastError("Индексация остановлена пользователем");
+            site.setStatusTime(new Date());
+        }
+        return ResponseEntity.ok(new SuccessResponse());
+    }
+
+    private void urlSearcherStop() {
+        UrlRecursiveSearcher.setStopFlag(true);
+    }
+
+    private void urlSearcherActive() {
+        UrlRecursiveSearcher.setStopFlag(false);
     }
 }

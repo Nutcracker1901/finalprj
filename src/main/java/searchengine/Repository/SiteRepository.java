@@ -5,7 +5,9 @@ import org.springframework.stereotype.Repository;
 import searchengine.model.SiteEntity;
 
 @Repository
-public interface SiteRepository extends JpaRepository<SiteEntity, Integer> {
+public interface SiteRepository extends JpaRepository<SiteEntity, Long> {
     SiteEntity findByName(String name);
-    void deleteByName(String name);
+    SiteEntity findByUrl(String url);
+    boolean existsByName(String name);
+    boolean existsByUrl(String url);
 }
