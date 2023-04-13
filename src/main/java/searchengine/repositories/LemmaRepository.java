@@ -1,9 +1,11 @@
-package searchengine.Repository;
+package searchengine.repositories;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 import searchengine.model.LemmaEntity;
 import searchengine.model.SiteEntity;
+
+import java.util.Optional;
 
 @Repository
 public interface LemmaRepository extends JpaRepository<LemmaEntity, Long> {
@@ -11,5 +13,5 @@ public interface LemmaRepository extends JpaRepository<LemmaEntity, Long> {
 
     Boolean existsByLemmaAndSite(String lemma, SiteEntity site);
 
-    int countAllBySite(SiteEntity site);
+    Optional<Integer> countAllBySite(SiteEntity site);
 }

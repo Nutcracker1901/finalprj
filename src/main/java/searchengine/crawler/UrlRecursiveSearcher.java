@@ -1,4 +1,4 @@
-package searchengine.services;
+package searchengine.crawler;
 
 import lombok.Setter;
 import lombok.SneakyThrows;
@@ -6,8 +6,8 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
-import searchengine.Repository.PageRepository;
-import searchengine.Repository.SiteRepository;
+import searchengine.repositories.PageRepository;
+import searchengine.repositories.SiteRepository;
 import searchengine.model.PageEntity;
 import searchengine.model.SiteEntity;
 
@@ -37,22 +37,10 @@ public class UrlRecursiveSearcher extends RecursiveTask<Integer> {
         if (stopFlag) {
             return 0;
         }
-        Document doc;
         Elements links;
-        String content = "";
-        PageEntity page = new PageEntity();
         try {
-            Thread.sleep(200);
-            doc = Jsoup.connect(site.getUrl() + path).get();
-            int code = doc.location().startsWith("https") ? 200 : 404;
-            content = doc.toString();
-            links = doc.select("a[href]");
-            page.setSite(site);
-            page.setPath(path);
-            page.setCode(code);
-            page.setContent(content);
             if (pageRepository.existsBySiteAndPath(site, path)) return 0;
-            pageRepository.save(page);
+            links = addPage();
         } catch (Exception e) {
             e.getMessage();
             return 0;
@@ -83,6 +71,25 @@ public class UrlRecursiveSearcher extends RecursiveTask<Integer> {
         }
 
         return count;
+    }
+
+    private Elements addPage() throws Exception {
+        Document doc;
+        Elements links;
+        String content = "";
+        PageEntity page = new PageEntity();
+        Thread.sleep(200);
+        doc = Jsoup.connect(site.getUrl() + path).get();
+        int code = doc.location().startsWith("https") ? 200 : 404;
+        content = doc.toString();
+        links = doc.select("a[href]");
+        page.setSite(site);
+        page.setPath(path);
+        page.setCode(code);
+        page.setContent(content);
+        if (pageRepository.existsBySiteAndPath(site, path)) return new Elements();
+        pageRepository.save(page);
+        return links;
     }
 }
 

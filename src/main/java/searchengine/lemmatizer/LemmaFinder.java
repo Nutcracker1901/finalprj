@@ -1,4 +1,4 @@
-package searchengine.services;
+package searchengine.lemmatizer;
 
 import org.apache.lucene.morphology.LuceneMorphology;
 import org.apache.lucene.morphology.english.EnglishLuceneMorphology;
