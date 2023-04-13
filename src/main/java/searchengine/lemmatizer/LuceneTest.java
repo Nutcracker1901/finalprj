@@ -1,4 +1,6 @@
-import searchengine.services.LemmaFinder;
+package searchengine.lemmatizer;
+
+import searchengine.lemmatizer.LemmaFinder;
 
 import java.io.IOException;
 import java.util.*;

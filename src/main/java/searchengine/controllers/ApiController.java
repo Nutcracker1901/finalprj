@@ -4,20 +4,20 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import searchengine.dto.seach.SearchResponse;
 import searchengine.dto.statistics.StatisticsResponse;
-import searchengine.services.SearchService;
-import searchengine.services.SitesIndexService;
+import searchengine.services.SearchServiceImpl;
+import searchengine.services.SitesIndexServicesImpl;
 import searchengine.services.StatisticsService;
 
 @RestController
 @RequestMapping("/api")
 public class ApiController {
     private final StatisticsService statisticsService;
-    private final SitesIndexService sitesIndexService;
-    private final SearchService searchService;
+    private final SitesIndexServicesImpl sitesIndexService;
+    private final SearchServiceImpl searchService;
 
-    public ApiController(StatisticsService statisticsService, SitesIndexService sitesIndexService, SearchService searchService) {
+    public ApiController(StatisticsService statisticsService, SitesIndexServicesImpl sitesIndexServicesss, SearchServiceImpl searchService) {
         this.statisticsService = statisticsService;
-        this.sitesIndexService = sitesIndexService;
+        this.sitesIndexService = sitesIndexServicesss;
         this.searchService = searchService;
     }
 
