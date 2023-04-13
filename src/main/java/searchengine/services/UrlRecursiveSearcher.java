@@ -6,8 +6,8 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
-import searchengine.Repository.PageRepository;
-import searchengine.Repository.SiteRepository;
+import searchengine.repositories.PageRepository;
+import searchengine.repositories.SiteRepository;
 import searchengine.model.PageEntity;
 import searchengine.model.SiteEntity;
 

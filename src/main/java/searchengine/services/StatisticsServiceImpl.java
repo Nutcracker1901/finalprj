@@ -4,9 +4,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import searchengine.Repository.LemmaRepository;
-import searchengine.Repository.PageRepository;
-import searchengine.Repository.SiteRepository;
+import searchengine.repositories.LemmaRepository;
+import searchengine.repositories.PageRepository;
+import searchengine.repositories.SiteRepository;
 import searchengine.config.Site;
 import searchengine.config.SitesList;
 import searchengine.dto.statistics.DetailedStatisticsItem;
@@ -42,16 +42,16 @@ public class StatisticsServiceImpl implements StatisticsService {
 
         List<SiteEntity> siteEntityList = new ArrayList<>();
         for (Site site : sites.getSites()) {
-            siteEntityList.add(siteRepository.findByName(site.getName()));
+            SiteEntity siteEntity = siteRepository.findByName(site.getName());
+            if (siteEntity != null) siteEntityList.add(siteEntity);
         }
 
         for (SiteEntity site : siteEntityList) {
-//            SiteEntity siteEntity = siteRepository.findByName(site.getName());
             DetailedStatisticsItem item = new DetailedStatisticsItem();
             item.setName(site.getName());
             item.setUrl(site.getUrl());
-            int pages = pageRepository.countAllBySite(site);
-            int lemmas = lemmaRepository.countAllBySite(site);
+            int pages = pageRepository.countAllBySite(site).orElse(0);
+            int lemmas = lemmaRepository.countAllBySite(site).orElse(0);
             String status = site.getStatus().toString();
             Date statusTime = site.getStatusTime();
             item.setPages(pages);

@@ -1,9 +1,7 @@
 package searchengine.controllers;
 
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import searchengine.dto.error.ErrorResponse;
 import searchengine.dto.seach.SearchResponse;
 import searchengine.dto.statistics.StatisticsResponse;
 import searchengine.services.SearchService;
@@ -30,35 +28,18 @@ public class ApiController {
 
     @GetMapping("/startIndexing")
     public ResponseEntity startIndexing() {
-        sitesIndexService.indexingActive();
         sitesIndexService.deleteIndexed();
         return sitesIndexService.sitesIndexing();
     }
 
     @GetMapping("/stopIndexing")
     public ResponseEntity stopIndexing() {
-        if (!sitesIndexService.isIndexing()) {
-            ErrorResponse response = new ErrorResponse();
-            response.setResult(false);
-            response.setError("Индексация не запущена");
-            return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED).body(response);
-        }
-        sitesIndexService.stopIndexing();
-        return sitesIndexService.sitesIndexingStop();
+        return sitesIndexService.stopIndexing();
     }
 
     @PostMapping("/indexPage")
     public ResponseEntity indexPage(@RequestParam String url) {
-        String path = sitesIndexService.IsPageIndexed(url);
-        if (path.equals("")) {
-            ErrorResponse response = new ErrorResponse();
-            response.setResult(false);
-            response.setError("Данная страница находится за пределами сайтов, указанных в конфигурационном файле");
-            return ResponseEntity.ok(response);
-        }
-        url = url.substring(0, url.length() - path.length());
-        sitesIndexService.deleteByPageIndex(url, path);
-        return sitesIndexService.pageIndexing(url, path);
+        return sitesIndexService.pageIndexing(url);
     }
 
     @GetMapping("/search")

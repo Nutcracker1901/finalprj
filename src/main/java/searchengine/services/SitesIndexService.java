@@ -1,6 +1,5 @@
 package searchengine.services;
 
-import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
@@ -8,10 +7,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
-import searchengine.Repository.IndexRepository;
-import searchengine.Repository.LemmaRepository;
-import searchengine.Repository.PageRepository;
-import searchengine.Repository.SiteRepository;
+import searchengine.repositories.IndexRepository;
+import searchengine.repositories.LemmaRepository;
+import searchengine.repositories.PageRepository;
+import searchengine.repositories.SiteRepository;
 import searchengine.config.Site;
 import searchengine.config.SitesList;
 import searchengine.dto.error.ErrorResponse;
@@ -46,19 +45,20 @@ public class SitesIndexService {
     @PersistenceContext
     private EntityManager em;
     private volatile boolean stopFlag = false;
-    @Getter
     private volatile boolean indexing = false;
     private LemmaFinder lemmaFinder;
 
     public ResponseEntity sitesIndexing() {
+        if (isIndexing()) {
+            return returnResponse("Индексация уже происходит", HttpStatus.METHOD_NOT_ALLOWED);
+        }
+        deleteIndexed();
         indexing = true;
+        stopFlag = false;
         try {
             lemmaFinder = LemmaFinder.getInstance();
         } catch (IOException e) {
-            ErrorResponse response = new ErrorResponse();
-            response.setResult(false);
-            response.setError(e.getMessage());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+            return returnResponse(e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);
         }
         urlSearcherActive();
 
@@ -87,10 +87,7 @@ public class SitesIndexService {
             service.submit(task);
         }
         if (stopFlag) {
-            ErrorResponse response = new ErrorResponse();
-            response.setResult(false);
-            response.setError("Индексация остановлена пользователем");
-            return ResponseEntity.ok(response);
+            return returnResponse("Индексация остановлена пользователем", HttpStatus.OK);
         }
 
         ResponseEntity response = untilServiceDone(service);
@@ -128,16 +125,14 @@ public class SitesIndexService {
             if (!service.awaitTermination(30, TimeUnit.MINUTES)) service.shutdownNow();
 
         } catch (InterruptedException e) {
-            ErrorResponse response = new ErrorResponse();
-            response.setResult(false);
-            response.setError(e.getMessage());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+            return returnResponse(e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);
         }
         return null;
     }
 
     @Transactional
     public void deleteIndexed() {
+        if (isIndexing()) return;
         indexRepository.deleteAll();
         lemmaRepository.deleteAll();
 
@@ -177,15 +172,19 @@ public class SitesIndexService {
         }
     }
 
-    public ResponseEntity pageIndexing(String url, String path) {
+    public ResponseEntity pageIndexing(String url) {//, String path) {
+        String path = isPageIndexed(url);
+        if (path.equals("")) {
+            return returnResponse("Данная страница находится за пределами сайтов, указанных в конфигурационном файле", HttpStatus.OK);
+        }
         try {
             lemmaFinder = LemmaFinder.getInstance();
         } catch (IOException e) {
-            ErrorResponse response = new ErrorResponse();
-            response.setResult(false);
-            response.setError(e.getMessage());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+            return returnResponse(e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);
         }
+        url = url.substring(0, url.length() - path.length());
+        deleteByPageIndex(url, path);
+
         SiteEntity site = siteRepository.findByUrl(url);
 
         Document doc;
@@ -204,10 +203,7 @@ public class SitesIndexService {
         } catch (Exception e) {
             site.setStatusTime(new Date());
             site.setStatus(Status.FAILED);
-            ErrorResponse response = new ErrorResponse();
-            response.setResult(false);
-            response.setError(e.getMessage());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+            return returnResponse(e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);
         }
 
         lemmaIndexing(site, page);
@@ -219,7 +215,7 @@ public class SitesIndexService {
         return ResponseEntity.ok(new SuccessResponse());
     }
 
-    public String IsPageIndexed(String url) {
+    public String isPageIndexed(String url) {
         String baseUrl = "";
         String path = "/";
         for (Site value : sites.getSites()) {
@@ -263,30 +259,33 @@ public class SitesIndexService {
         }
     }
 
-    public void stopIndexing() {
+    public ResponseEntity stopIndexing() {
+        if (!isIndexing()) {
+            return returnResponse("Индексация не запущена", HttpStatus.METHOD_NOT_ALLOWED);
+        }
         stopFlag = true;
         indexing = false;
         urlSearcherStop();
-    }
 
-    public void indexingActive() {
-        indexing = true;
-        stopFlag = false;
-    }
-
-    public boolean isIndexing() {
-        return indexing;
-    }
-
-    @Transactional
-    public ResponseEntity sitesIndexingStop() {
         List<SiteEntity> sitesList = siteRepository.findAll();
         for (SiteEntity site : sitesList) {
             site.setStatus(Status.FAILED);
             site.setLastError("Индексация остановлена пользователем");
             site.setStatusTime(new Date());
+            siteRepository.save(site);
         }
         return ResponseEntity.ok(new SuccessResponse());
+    }
+
+    private ResponseEntity returnResponse(String error, HttpStatus status) {
+        ErrorResponse response = new ErrorResponse();
+        response.setResult(false);
+        response.setError(error);
+        return ResponseEntity.status(status).body(response);
+    }
+
+    public boolean isIndexing() {
+        return indexing;
     }
 
     private void urlSearcherStop() {

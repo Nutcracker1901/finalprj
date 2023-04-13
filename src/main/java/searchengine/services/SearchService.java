@@ -6,19 +6,16 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
-import searchengine.Repository.IndexRepository;
-import searchengine.Repository.LemmaRepository;
-import searchengine.Repository.PageRepository;
-import searchengine.Repository.SiteRepository;
+import searchengine.model.*;
+import searchengine.repositories.IndexRepository;
+import searchengine.repositories.LemmaRepository;
+import searchengine.repositories.PageRepository;
+import searchengine.repositories.SiteRepository;
 import searchengine.config.Site;
 import searchengine.config.SitesList;
 import searchengine.dto.error.ErrorResponse;
 import searchengine.dto.seach.SearchData;
 import searchengine.dto.seach.SearchResponse;
-import searchengine.model.IndexEntity;
-import searchengine.model.LemmaEntity;
-import searchengine.model.PageEntity;
-import searchengine.model.SiteEntity;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -70,7 +67,8 @@ public class SearchService {
         }
 
         for (SiteEntity siteEntity : siteEntityList) {
-            int pageCount = pageRepository.countAllBySite(siteEntity);
+            if (!siteEntity.getStatus().equals(Status.INDEXED)) continue;
+            int pageCount = pageRepository.countAllBySite(siteEntity).get();
 
             List<LemmaEntity> lemmaEntityList = new ArrayList<>();
 
