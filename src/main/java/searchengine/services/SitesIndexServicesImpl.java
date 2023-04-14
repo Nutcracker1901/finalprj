@@ -47,6 +47,7 @@ public class SitesIndexServicesImpl implements SitesIndexService {
     private volatile boolean indexing = false;
     private LemmaFinder lemmaFinder;
 
+    @Override
     public ResponseEntity sitesIndexing() {
         if (isIndexing()) {
             return returnResponse("Индексация уже происходит", HttpStatus.METHOD_NOT_ALLOWED);
@@ -154,6 +155,7 @@ public class SitesIndexServicesImpl implements SitesIndexService {
         }
     }
 
+    @Override
     public ResponseEntity pageIndexing(String url) {//, String path) {
         String path = isPageIndexed(url);
         if (path.equals("")) {
@@ -229,6 +231,7 @@ public class SitesIndexServicesImpl implements SitesIndexService {
         }
     }
 
+    @Override
     public ResponseEntity stopIndexing() {
         if (!isIndexing()) {
             return returnResponse("Индексация не запущена", HttpStatus.METHOD_NOT_ALLOWED);
