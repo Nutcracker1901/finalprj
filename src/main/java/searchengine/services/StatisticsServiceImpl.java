@@ -4,7 +4,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import searchengine.model.Status;
 import searchengine.repositories.LemmaRepository;
 import searchengine.repositories.PageRepository;
 import searchengine.repositories.SiteRepository;
@@ -52,24 +51,6 @@ public class StatisticsServiceImpl implements StatisticsService {
             total.setPages(total.getPages() + i.getPages());
             total.setLemmas(total.getLemmas() + i.getLemmas());
         });
-//        for (SiteEntity site : siteEntityList) {
-//            DetailedStatisticsItem item = new DetailedStatisticsItem();
-//            item.setName(site.getName());
-//            item.setUrl(site.getUrl());
-//            int pages = pageRepository.countAllBySite(site).orElse(0);
-//            int lemmas = lemmaRepository.countAllBySite(site).orElse(0);
-//            String status = site.getStatus().toString();
-//            Date statusTime = site.getStatusTime();
-//            item.setPages(pages);
-//            item.setLemmas(lemmas);
-//            item.setStatus(status);
-//            if (site.getLastError() == null)
-//                item.setError(site.getLastError());
-//            item.setStatusTime(statusTime);
-//            total.setPages(total.getPages() + pages);
-//            total.setLemmas(total.getLemmas() + lemmas);
-//            detailed.add(item);
-//        }
 
         StatisticsResponse response = new StatisticsResponse();
         StatisticsData data = new StatisticsData();

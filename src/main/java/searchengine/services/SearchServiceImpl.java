@@ -36,6 +36,7 @@ public class SearchServiceImpl implements SearchService {
     @Autowired
     IndexRepository indexRepository;
 
+    @Override
     public ResponseEntity getSearch(String query, String site) {
         SearchResponse response = new SearchResponse();
         List<SearchData> data = new ArrayList<>();
