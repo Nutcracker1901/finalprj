@@ -7,7 +7,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
-import searchengine.crawler.UrlRecursiveSearcher;
+import searchengine.crawler.UrlCrawler;
 import searchengine.lemmatizer.LemmaFinder;
 import searchengine.repositories.IndexRepository;
 import searchengine.repositories.LemmaRepository;
@@ -60,15 +60,33 @@ public class SitesIndexServicesImpl implements SitesIndexService {
         } catch (IOException e) {
             return returnResponse(e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);
         }
-        urlSearcherActive();
+        urlCrawlerActive();
 
+        ResponseEntity response = multithreadingIndexing();
+        if (response != null) return response;
+        indexing = false;
+        return ResponseEntity.ok(new SuccessResponse());
+    }
+
+    private ResponseEntity checkThreads(ExecutorService service) {
+        try {
+            service.shutdown();
+            if (!service.awaitTermination(30, TimeUnit.MINUTES)) service.shutdownNow();
+
+        } catch (InterruptedException e) {
+            return returnResponse(e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+        return null;
+    }
+
+    private ResponseEntity multithreadingIndexing() {
         ExecutorService service = Executors.newFixedThreadPool(sites.getSites().size());
         for (Site value : sites.getSites()) {
             Runnable task = () -> {
-                SiteEntity site = createSiteEntity(value);
+                SiteEntity site = new SiteEntity(value.getUrl(), value.getName());
                 siteRepository.saveAndFlush(site);
 
-                int count = new ForkJoinPool().invoke(new UrlRecursiveSearcher(site, "/", pageRepository, siteRepository));
+                int count = new ForkJoinPool().invoke(new UrlCrawler(site, "/", pageRepository, siteRepository));
                 if (stopFlag) return;
 
                 updateSiteStatus(site, Status.INDEXING);
@@ -96,21 +114,9 @@ public class SitesIndexServicesImpl implements SitesIndexService {
             service.submit(task);
         }
 
+        if (stopFlag) return returnResponse("Индексация остановлена пользователем", HttpStatus.OK);
         response = checkThreads(service);
-        if (response != null) return response;
-        indexing = false;
-        return ResponseEntity.ok(new SuccessResponse());
-    }
-
-    private ResponseEntity checkThreads(ExecutorService service) {
-        try {
-            service.shutdown();
-            if (!service.awaitTermination(30, TimeUnit.MINUTES)) service.shutdownNow();
-
-        } catch (InterruptedException e) {
-            return returnResponse(e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);
-        }
-        return null;
+        return response;
     }
 
     @Transactional
@@ -156,6 +162,7 @@ public class SitesIndexServicesImpl implements SitesIndexService {
     }
 
     @Override
+    @Transactional
     public ResponseEntity pageIndexing(String url) {//, String path) {
         String path = isPageIndexed(url);
         if (path.equals("")) {
@@ -171,11 +178,16 @@ public class SitesIndexServicesImpl implements SitesIndexService {
 
         SiteEntity site = siteRepository.findByUrl(url);
         PageEntity page;
+        updateSiteStatus(site, Status.INDEXING);
 
         try {
-            page = createPageEntity(url, site, path);
+            Document doc;
+            String content = "";
+            doc = Jsoup.connect(url).get();
+            int code = doc.location().startsWith("https") ? 200 : 404;
+            content = doc.toString();
+            page = new PageEntity(site, path, code, content);
             pageRepository.saveAndFlush(page);
-            updateSiteStatus(site, Status.INDEXING);
         } catch (Exception e) {
             updateSiteStatus(site, Status.FAILED, e.getMessage());
             return returnResponse(e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);
@@ -191,11 +203,15 @@ public class SitesIndexServicesImpl implements SitesIndexService {
         String baseUrl = "";
         String path = "/";
         for (Site value : sites.getSites()) {
-            if (url.startsWith(value.getUrl()))
-                baseUrl = url.substring(0, value.getUrl().length());
-            path = url.substring(value.getUrl().length() - 3);
+            System.out.println("1");
+            if (url.startsWith(value.getUrl())) {
+                System.out.println("не происходит");
+                baseUrl = value.getUrl();
+                path = url.substring(value.getUrl().length());
+            }
         }
         if (!siteRepository.existsByUrl(baseUrl)) {
+            System.out.println("yes");
             return "";
         }
 
@@ -208,7 +224,6 @@ public class SitesIndexServicesImpl implements SitesIndexService {
         site.setStatus(Status.INDEXING);
         site.setStatusTime(new Date());
         siteRepository.saveAndFlush(site);
-
         if (pageRepository.existsBySiteAndPath(site, path + "/"))
             path = path.concat("/");
 
@@ -238,11 +253,11 @@ public class SitesIndexServicesImpl implements SitesIndexService {
         }
         stopFlag = true;
         indexing = false;
-        urlSearcherStop();
+        urlCrawlerStop();
 
         List<SiteEntity> sitesList = siteRepository.findAll();
         for (SiteEntity site : sitesList) {
-            updateSiteStatus(site, Status.INDEXED, "Индексация остановлена пользователем");
+            updateSiteStatus(site, Status.FAILED, "Индексация остановлена пользователем");
         }
         return ResponseEntity.ok(new SuccessResponse());
     }
@@ -258,12 +273,12 @@ public class SitesIndexServicesImpl implements SitesIndexService {
         return indexing;
     }
 
-    private void urlSearcherStop() {
-        UrlRecursiveSearcher.setStopFlag(true);
+    private void urlCrawlerStop() {
+        UrlCrawler.setStopFlag(true);
     }
 
-    private void urlSearcherActive() {
-        UrlRecursiveSearcher.setStopFlag(false);
+    private void urlCrawlerActive() {
+        UrlCrawler.setStopFlag(false);
     }
 
     private void updateSiteStatus(SiteEntity site, Status status) {
@@ -277,30 +292,5 @@ public class SitesIndexServicesImpl implements SitesIndexService {
         site.setStatus(status);
         site.setLastError(error);
         siteRepository.saveAndFlush(site);
-    }
-
-    private SiteEntity createSiteEntity(Site value) {
-        SiteEntity site = new SiteEntity();
-        site.setUrl(value.getUrl());
-        site.setName(value.getName());
-        site.setStatus(Status.INDEXING);
-        site.setStatusTime(new Date());
-        return site;
-    }
-
-    private PageEntity createPageEntity(String url, SiteEntity site, String path) throws Exception {
-        Document doc;
-        String content = "";
-        PageEntity page = new PageEntity();
-
-        doc = Jsoup.connect(url).get();
-        int code = doc.location().startsWith("https") ? 200 : 404;
-        content = doc.toString();
-        page.setSite(site);
-        page.setPath(path);
-        page.setCode(code);
-        page.setContent(content);
-
-        return page;
     }
 }

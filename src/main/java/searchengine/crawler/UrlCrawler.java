@@ -15,7 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.RecursiveTask;
 
-public class UrlRecursiveSearcher extends RecursiveTask<Integer> {
+public class UrlCrawler extends RecursiveTask<Integer> {
     private final SiteEntity site;
     private final String path;
     private final PageRepository pageRepository;
@@ -23,7 +23,7 @@ public class UrlRecursiveSearcher extends RecursiveTask<Integer> {
     @Setter
     private static volatile boolean stopFlag = false;
 
-    public UrlRecursiveSearcher(SiteEntity site, String path, PageRepository pageRepository, SiteRepository siteRepository) {
+    public UrlCrawler(SiteEntity site, String path, PageRepository pageRepository, SiteRepository siteRepository) {
 
         this.site = site;
         this.path = path;
@@ -34,9 +34,7 @@ public class UrlRecursiveSearcher extends RecursiveTask<Integer> {
     @Override
     @SneakyThrows
     protected Integer compute() {
-        if (stopFlag) {
-            return 0;
-        }
+        if (stopFlag) return 0;
         Elements links;
         try {
             if (pageRepository.existsBySiteAndPath(site, path)) return 0;
@@ -45,8 +43,7 @@ public class UrlRecursiveSearcher extends RecursiveTask<Integer> {
             e.getMessage();
             return 0;
         }
-
-        List<UrlRecursiveSearcher> subtasks = new ArrayList<>();
+        List<UrlCrawler> subtasks = new ArrayList<>();
 
         for (Element link : links) {
             String href = link.attr("href");
@@ -56,17 +53,15 @@ public class UrlRecursiveSearcher extends RecursiveTask<Integer> {
             if (href.equals("")) href = "/";
             Thread.sleep(200);
             if (!pageRepository.existsBySiteAndPath(site, href)) {
-                if (stopFlag) {
-                    return 0;
-                }
-                UrlRecursiveSearcher subtask = new UrlRecursiveSearcher(site, href, pageRepository, siteRepository);
+                if (stopFlag) return 0;
+                UrlCrawler subtask = new UrlCrawler(site, href, pageRepository, siteRepository);
                 subtask.fork();
                 subtasks.add(subtask);
             }
         }
 
         int count = 1;
-        for (UrlRecursiveSearcher subtask : subtasks) {
+        for (UrlCrawler subtask : subtasks) {
             count += subtask.join();
         }
 
@@ -77,16 +72,17 @@ public class UrlRecursiveSearcher extends RecursiveTask<Integer> {
         Document doc;
         Elements links;
         String content = "";
-        PageEntity page = new PageEntity();
+//        PageEntity page = new PageEntity();
         Thread.sleep(200);
         doc = Jsoup.connect(site.getUrl() + path).get();
         int code = doc.location().startsWith("https") ? 200 : 404;
         content = doc.toString();
         links = doc.select("a[href]");
-        page.setSite(site);
-        page.setPath(path);
-        page.setCode(code);
-        page.setContent(content);
+        PageEntity page = new PageEntity(site, path, code, content);
+//        page.setSite(site);
+//        page.setPath(path);
+//        page.setCode(code);
+//        page.setContent(content);
         if (pageRepository.existsBySiteAndPath(site, path)) return new Elements();
         pageRepository.save(page);
         return links;

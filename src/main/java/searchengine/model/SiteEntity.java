@@ -1,6 +1,7 @@
 package searchengine.model;
 
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import javax.persistence.*;
@@ -10,6 +11,7 @@ import java.util.Date;
 @Entity
 @Table(name = "site")
 @Setter@Getter
+@NoArgsConstructor
 public class SiteEntity implements Serializable {
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
@@ -25,4 +27,11 @@ public class SiteEntity implements Serializable {
     private String url;
     @Column(columnDefinition = "VARCHAR(255)")
     private String name;
+
+    public SiteEntity(String url, String name) {
+        this.url = url;
+        this.name = name;
+        statusTime = new Date();
+        status = Status.INDEXING;
+    }
 }
