@@ -20,6 +20,7 @@ import searchengine.dto.seach.SearchResponse;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
 
@@ -63,73 +64,15 @@ public class SearchServiceImpl implements SearchService {
         }
 
         for (SiteEntity siteEntity : siteEntityList) {
-            if (!siteEntity.getStatus().equals(Status.INDEXED)) continue;
-            int pageCount = pageRepository.countAllBySite(siteEntity).get();
-
-            List<LemmaEntity> lemmaEntityList = new ArrayList<>();
-
-            for (String lemma : lemmas) {
-                LemmaEntity lemmaEntity = lemmaRepository.findByLemmaAndSite(lemma, siteEntity);
-                if (lemmaEntity != null && !((lemmaEntity.getFrequency() * 1.0) / pageCount > 1.8))
-                    lemmaEntityList.add(lemmaEntity);
-            }
-
-            if (lemmaEntityList.size() == 0) {
-                continue;
-            }
-
-            lemmaEntityList.sort((l1, l2) -> {
-                if (l1.getFrequency() < l2.getFrequency()) return 1;
-                return 0;
-            });
-
-            List<PageEntity> pages = new ArrayList<>();
-            List<PageEntity> pageEntityList = new ArrayList<>();
-            for (IndexEntity index : indexRepository.findByLemma(lemmaEntityList.get(0))) {
-                pages.add(index.getPage());
-                pageEntityList.add(index.getPage());
-            }
-
-            for (LemmaEntity l : lemmaEntityList) {
-                for (PageEntity page : pages) {
-                    if (!indexRepository.existsByPageAndLemma(page, l)) {
-                        pageEntityList.remove(page);
-                    }
-                    if (pageEntityList.size() == 0) {
-                        break;
-                    }
-                }
-                if (pageEntityList.size() == 0) break;
-            }
-
-            if (pageEntityList.size() == 0) continue;
-
-            int absRelevance;
-            int totalRelevance = 0;
-
-            for (PageEntity page : pageRepository.findAllBySite(siteEntity)) {
-                for (LemmaEntity lemma : lemmaEntityList) {
-                    if (indexRepository.existsByPageAndLemma(page, lemma))
-                        totalRelevance += indexRepository.findByPageAndLemma(page, lemma).getRank();
-                }
-            }
-
-            for (PageEntity page : pageEntityList) {
-                absRelevance = 0;
-                for (LemmaEntity lemma : lemmaEntityList) {
-                    if (indexRepository.existsByPageAndLemma(page, lemma))
-                        absRelevance += indexRepository.findByPageAndLemma(page, lemma).getRank();
-                }
-                double relevance = absRelevance * 1.0 / totalRelevance;
-                SearchData searchData = collectSearchData(siteEntity, page, lemmaEntityList, relevance);
-                data.add(searchData);
-            }
+            data.addAll(collectSiteSearchData(siteEntity, lemmas));
         }
 
-        data.sort((d1, d2) -> {
-            if (d1.getRelevance() > d2.getRelevance()) return 1;
-            return 0;
-        });
+        System.out.println(data);
+
+        data.sort(Comparator.comparingDouble(SearchData::getRelevance).reversed());
+
+
+        System.out.println("sorted data\n" + data);
 
         response.setData(data);
         response.setResult(true);
@@ -137,7 +80,7 @@ public class SearchServiceImpl implements SearchService {
         return ResponseEntity.ok(response);
     }
 
-    private SearchData collectSearchData(SiteEntity siteEntity, PageEntity page, List<LemmaEntity> lemmaEntityList, double relevance) {
+    private SearchData collectPageSearchData(SiteEntity siteEntity, PageEntity page, List<LemmaEntity> lemmaEntityList, double relevance) {
         SearchData searchData = new SearchData();
 
         searchData.setSite(siteEntity.getUrl());
@@ -148,6 +91,7 @@ public class SearchServiceImpl implements SearchService {
 
         String text = Jsoup.parse(page.getContent()).text();
         String snippet = "<html><body>\"<b>";
+        if (lemmaEntityList.size() > 3) lemmaEntityList = lemmaEntityList.subList(0, 3);
         for (LemmaEntity lemma : lemmaEntityList) {
             int index = text.indexOf(lemma.getLemma());
             int start = Math.max(0, index - 70);
@@ -170,6 +114,73 @@ public class SearchServiceImpl implements SearchService {
         searchData.setSnippet(snippet);
         searchData.setRelevance(relevance);
         return searchData;
+    }
+
+    private List<SearchData> collectSiteSearchData(SiteEntity siteEntity, Set<String> lemmas) {
+        List<SearchData> data = new ArrayList<>();
+        if (!siteEntity.getStatus().equals(Status.INDEXED)) return data;
+        int pageCount = pageRepository.countAllBySite(siteEntity).get();
+
+        List<LemmaEntity> lemmaEntityList = new ArrayList<>();
+
+        for (String lemma : lemmas) {
+            LemmaEntity lemmaEntity = lemmaRepository.findByLemmaAndSite(lemma, siteEntity);
+            if (lemmaEntity == null) return data;
+            if ((lemmaEntity.getFrequency() * 1.0) / pageCount < 0.65)
+                lemmaEntityList.add(lemmaEntity);
+        }
+
+        if (lemmaEntityList.size() == 0) {
+            return data;
+        }
+
+        lemmaEntityList.sort((l1, l2) -> {
+            if (l1.getFrequency() < l2.getFrequency()) return 1;
+            return 0;
+        });
+
+        List<PageEntity> pages = new ArrayList<>();
+        List<PageEntity> pageEntityList = new ArrayList<>();
+        for (IndexEntity index : indexRepository.findByLemma(lemmaEntityList.get(0))) {
+            pages.add(index.getPage());
+            pageEntityList.add(index.getPage());
+        }
+
+        for (LemmaEntity l : lemmaEntityList) {
+            for (PageEntity page : pages) {
+                if (!indexRepository.existsByPageAndLemma(page, l)) {
+                    pageEntityList.remove(page);
+                }
+                if (pageEntityList.size() == 0) {
+                    break;
+                }
+            }
+            if (pageEntityList.size() == 0) break;
+        }
+
+        if (pageEntityList.size() == 0) return data;
+        int absRelevance;
+        int maxAbsRelevance = 0;
+
+        for (PageEntity page : pageEntityList) {
+            absRelevance = 0;
+            for (LemmaEntity lemma : lemmaEntityList) {
+                absRelevance += indexRepository.findByPageAndLemma(page, lemma).getRank();
+            }
+            maxAbsRelevance = Integer.max(maxAbsRelevance, absRelevance);
+        }
+
+        for (PageEntity page : pageEntityList) {
+            absRelevance = 0;
+            for (LemmaEntity lemma : lemmaEntityList) {
+                if (indexRepository.existsByPageAndLemma(page, lemma))
+                    absRelevance += indexRepository.findByPageAndLemma(page, lemma).getRank();
+            }
+            double relevance = absRelevance * 1.0 / maxAbsRelevance;
+            SearchData searchData = collectPageSearchData(siteEntity, page, lemmaEntityList, relevance);
+            data.add(searchData);
+        }
+        return data;
     }
 
     private ResponseEntity returnResponse(String error, HttpStatus status) {

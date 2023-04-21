@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import searchengine.model.Status;
 import searchengine.repositories.LemmaRepository;
 import searchengine.repositories.PageRepository;
 import searchengine.repositories.SiteRepository;
@@ -38,13 +39,15 @@ public class StatisticsServiceImpl implements StatisticsService {
         total.setSites(sites.getSites().size());
         total.setIndexing(true);
 
-        List<DetailedStatisticsItem> detailed = new ArrayList<>();
+        List<DetailedStatisticsItem> detailed;
 
         List<SiteEntity> siteEntityList = new ArrayList<>();
         for (Site site : sites.getSites()) {
             SiteEntity siteEntity = siteRepository.findByName(site.getName());
             if (siteEntity != null) siteEntityList.add(siteEntity);
         }
+
+        if (siteEntityList.size() == 0) return collectItemsBeforeFirstIndexing();
 
         detailed = collectItems(siteEntityList);
         detailed.forEach(i -> {
@@ -80,5 +83,33 @@ public class StatisticsServiceImpl implements StatisticsService {
             detailed.add(item);
         }
         return detailed;
+    }
+
+    private StatisticsResponse collectItemsBeforeFirstIndexing() {
+        TotalStatistics total = new TotalStatistics();
+        total.setSites(sites.getSites().size());
+        total.setIndexing(false);
+
+        List<DetailedStatisticsItem> detailed = new ArrayList<>();
+
+        for (Site site : sites.getSites()) {
+            DetailedStatisticsItem item = new DetailedStatisticsItem();
+            item.setName(site.getName());
+            item.setUrl(site.getUrl());
+            item.setPages(0);
+            item.setLemmas(0);
+            item.setStatus(Status.FAILED.toString());
+            item.setError("Индексация не была запущена ни разу");
+            item.setStatusTime(new Date());
+            detailed.add(item);
+        }
+
+        StatisticsResponse response = new StatisticsResponse();
+        StatisticsData data = new StatisticsData();
+        data.setTotal(total);
+        data.setDetailed(detailed);
+        response.setStatistics(data);
+        response.setResult(true);
+        return response;
     }
 }

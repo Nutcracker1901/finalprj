@@ -1,6 +1,7 @@
 package searchengine.model;
 
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import javax.persistence.*;
@@ -10,6 +11,7 @@ import java.io.Serializable;
 @Table(name = "page", indexes = @Index(columnList = "path"))
 @Getter
 @Setter
+@NoArgsConstructor
 public class PageEntity implements Serializable {
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
@@ -22,4 +24,11 @@ public class PageEntity implements Serializable {
     private int code;
     @Column(columnDefinition = "MEDIUMTEXT", nullable = false)
     private String content;
+
+    public PageEntity(SiteEntity site, String path, int code, String content) {
+        this.site = site;
+        this.path = path;
+        this.code = code;
+        this.content = content;
+    }
 }
