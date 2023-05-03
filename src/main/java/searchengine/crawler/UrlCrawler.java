@@ -44,7 +44,16 @@ public class UrlCrawler extends RecursiveTask<Integer> {
             return 0;
         }
         List<UrlCrawler> subtasks = new ArrayList<>();
+        if (subtasksFork(links, subtasks)) return 0;
 
+        int count = 1;
+        for (UrlCrawler subtask : subtasks) {
+            count += subtask.join();
+        }
+        return count;
+    }
+
+    private boolean subtasksFork(Elements links, List<UrlCrawler> subtasks) throws InterruptedException {
         for (Element link : links) {
             String href = link.attr("href");
             if (href.startsWith(site.getUrl())) {
@@ -53,36 +62,25 @@ public class UrlCrawler extends RecursiveTask<Integer> {
             if (href.equals("")) href = "/";
             Thread.sleep(200);
             if (!pageRepository.existsBySiteAndPath(site, href)) {
-                if (stopFlag) return 0;
+                if (stopFlag) return stopFlag;
                 UrlCrawler subtask = new UrlCrawler(site, href, pageRepository, siteRepository);
                 subtask.fork();
                 subtasks.add(subtask);
             }
         }
-
-        int count = 1;
-        for (UrlCrawler subtask : subtasks) {
-            count += subtask.join();
-        }
-
-        return count;
+        return stopFlag;
     }
 
     private Elements addPage() throws Exception {
         Document doc;
         Elements links;
         String content = "";
-//        PageEntity page = new PageEntity();
         Thread.sleep(200);
         doc = Jsoup.connect(site.getUrl() + path).get();
         int code = doc.location().startsWith("https") ? 200 : 404;
         content = doc.toString();
         links = doc.select("a[href]");
         PageEntity page = new PageEntity(site, path, code, content);
-//        page.setSite(site);
-//        page.setPath(path);
-//        page.setCode(code);
-//        page.setContent(content);
         if (pageRepository.existsBySiteAndPath(site, path)) return new Elements();
         pageRepository.save(page);
         return links;

@@ -1,6 +1,7 @@
 package searchengine.model;
 
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import javax.persistence.*;
@@ -9,6 +10,7 @@ import javax.persistence.*;
 @Table(name = "`index`")
 @Getter
 @Setter
+@NoArgsConstructor
 public class IndexEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
@@ -19,4 +21,10 @@ public class IndexEntity {
     private LemmaEntity lemma;
     @Column(name = "`rank`", columnDefinition = "FLOAT", nullable = false)
     private float rank;
+
+    public IndexEntity(PageEntity page, LemmaEntity lemma, float rank) {
+        this.page = page;
+        this.lemma = lemma;
+        this.rank = rank;
+    }
 }
