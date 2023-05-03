@@ -35,10 +35,7 @@ public class StatisticsServiceImpl implements StatisticsService {
     @Override
     @SneakyThrows
     public StatisticsResponse getStatistics() {
-        TotalStatistics total = new TotalStatistics();
-        total.setSites(sites.getSites().size());
-        total.setIndexing(true);
-
+        TotalStatistics total = new TotalStatistics(sites.getSites().size(), 0, 0, true);
         List<DetailedStatisticsItem> detailed;
 
         List<SiteEntity> siteEntityList = new ArrayList<>();
@@ -55,13 +52,8 @@ public class StatisticsServiceImpl implements StatisticsService {
             total.setLemmas(total.getLemmas() + i.getLemmas());
         });
 
-        StatisticsResponse response = new StatisticsResponse();
-        StatisticsData data = new StatisticsData();
-        data.setTotal(total);
-        data.setDetailed(detailed);
-        response.setStatistics(data);
-        response.setResult(true);
-        return response;
+        StatisticsData data = new StatisticsData(total, detailed);
+        return new StatisticsResponse(true, data);
     }
 
     private List<DetailedStatisticsItem> collectItems(List<SiteEntity> siteEntityList) {
@@ -93,14 +85,9 @@ public class StatisticsServiceImpl implements StatisticsService {
         List<DetailedStatisticsItem> detailed = new ArrayList<>();
 
         for (Site site : sites.getSites()) {
-            DetailedStatisticsItem item = new DetailedStatisticsItem();
-            item.setName(site.getName());
-            item.setUrl(site.getUrl());
-            item.setPages(0);
-            item.setLemmas(0);
-            item.setStatus(Status.FAILED.toString());
-            item.setError("Индексация не была запущена ни разу");
-            item.setStatusTime(new Date());
+            DetailedStatisticsItem item = new DetailedStatisticsItem(site.getUrl(), site.getName(),
+                    Status.FAILED.toString(), new Date(),
+                    "Индексация не была запущена ни разу", 0, 0);
             detailed.add(item);
         }
 

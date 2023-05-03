@@ -39,7 +39,6 @@ public class SearchServiceImpl implements SearchService {
 
     @Override
     public ResponseEntity getSearch(String query, String site) {
-        SearchResponse response = new SearchResponse();
         List<SearchData> data = new ArrayList<>();
 
         LemmaFinder lemmaFinder;
@@ -49,40 +48,23 @@ public class SearchServiceImpl implements SearchService {
             return returnResponse(e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);
         }
         Set<String> lemmas = lemmaFinder.getLemmaSet(query);
-
-        System.out.println(lemmas);
-
         if (lemmas.isEmpty()) return returnResponse("Задан пустой поисковый запрос", HttpStatus.INTERNAL_SERVER_ERROR);
 
         List<SiteEntity> siteEntityList = new ArrayList<>();
         if (site.equals("")) {
-            for (Site s : sites.getSites()) {
-                siteEntityList.add(siteRepository.findByName(s.getName()));
-            }
-        } else {
-            siteEntityList.add(siteRepository.findByUrl(site));
-        }
+            for (Site s : sites.getSites()) siteEntityList.add(siteRepository.findByName(s.getName()));
+        } else siteEntityList.add(siteRepository.findByUrl(site));
 
         for (SiteEntity siteEntity : siteEntityList) {
             data.addAll(collectSiteSearchData(siteEntity, lemmas));
         }
-
-        System.out.println(data);
-
         data.sort(Comparator.comparingDouble(SearchData::getRelevance).reversed());
-
-
-        System.out.println("sorted data\n" + data);
-
-        response.setData(data);
-        response.setResult(true);
-        response.setCount(response.getCount() + data.size());
+        SearchResponse response = new SearchResponse(true, data.size(), data);
         return ResponseEntity.ok(response);
     }
 
     private SearchData collectPageSearchData(SiteEntity siteEntity, PageEntity page, List<LemmaEntity> lemmaEntityList, double relevance) {
         SearchData searchData = new SearchData();
-
         searchData.setSite(siteEntity.getUrl());
         searchData.setSiteName(siteEntity.getName());
         searchData.setUri(page.getPath());
@@ -90,6 +72,13 @@ public class SearchServiceImpl implements SearchService {
         searchData.setTitle(title);
 
         String text = Jsoup.parse(page.getContent()).text();
+        String snippet = getSnippet(lemmaEntityList, text);
+        searchData.setSnippet(snippet);
+        searchData.setRelevance(relevance);
+        return searchData;
+    }
+
+    private static String getSnippet(List<LemmaEntity> lemmaEntityList, String text) {
         String snippet = "<html><body>\"<b>";
         if (lemmaEntityList.size() > 3) lemmaEntityList = lemmaEntityList.subList(0, 3);
         for (LemmaEntity lemma : lemmaEntityList) {
@@ -107,13 +96,10 @@ public class SearchServiceImpl implements SearchService {
             else if (rDot != -1) end = start + rDot;
             if (lSpace != -1) start += lSpace + 1;
             else if (lDot != -1) start += lDot + 1;
-
             snippet = snippet.concat(text.substring(start, end) + "\n");
         }
         snippet = snippet.concat("</b>\"</body></html>");
-        searchData.setSnippet(snippet);
-        searchData.setRelevance(relevance);
-        return searchData;
+        return snippet;
     }
 
     private List<SearchData> collectSiteSearchData(SiteEntity siteEntity, Set<String> lemmas) {
@@ -121,24 +107,8 @@ public class SearchServiceImpl implements SearchService {
         if (!siteEntity.getStatus().equals(Status.INDEXED)) return data;
         int pageCount = pageRepository.countAllBySite(siteEntity).get();
 
-        List<LemmaEntity> lemmaEntityList = new ArrayList<>();
-
-        for (String lemma : lemmas) {
-            LemmaEntity lemmaEntity = lemmaRepository.findByLemmaAndSite(lemma, siteEntity);
-            if (lemmaEntity == null) return data;
-            if ((lemmaEntity.getFrequency() * 1.0) / pageCount < 0.65)
-                lemmaEntityList.add(lemmaEntity);
-        }
-
-        if (lemmaEntityList.size() == 0) {
-            return data;
-        }
-
-        lemmaEntityList.sort((l1, l2) -> {
-            if (l1.getFrequency() < l2.getFrequency()) return 1;
-            return 0;
-        });
-
+        List<LemmaEntity> lemmaEntityList = getLemmaEntities(siteEntity, lemmas, pageCount);
+        if (lemmaEntityList.size() == 0) return data;
         List<PageEntity> pages = new ArrayList<>();
         List<PageEntity> pageEntityList = new ArrayList<>();
         for (IndexEntity index : indexRepository.findByLemma(lemmaEntityList.get(0))) {
@@ -148,20 +118,39 @@ public class SearchServiceImpl implements SearchService {
 
         for (LemmaEntity l : lemmaEntityList) {
             for (PageEntity page : pages) {
-                if (!indexRepository.existsByPageAndLemma(page, l)) {
-                    pageEntityList.remove(page);
-                }
-                if (pageEntityList.size() == 0) {
-                    break;
-                }
+                if (!indexRepository.existsByPageAndLemma(page, l)) pageEntityList.remove(page);
+                if (pageEntityList.size() == 0) break;
             }
             if (pageEntityList.size() == 0) break;
         }
 
         if (pageEntityList.size() == 0) return data;
+        return collectData(siteEntity, data, lemmaEntityList, pageEntityList);
+    }
+
+    private List<LemmaEntity> getLemmaEntities(SiteEntity siteEntity, Set<String> lemmas, int pageCount) {
+        List<LemmaEntity> lemmaEntityList = new ArrayList<>();
+        for (String lemma : lemmas) {
+            LemmaEntity lemmaEntity = lemmaRepository.findByLemmaAndSite(lemma, siteEntity);
+            if (lemmaEntity == null) return lemmaEntityList;
+            if ((lemmaEntity.getFrequency() * 1.0) / pageCount < 0.65)
+                lemmaEntityList.add(lemmaEntity);
+        }
+
+        if (lemmaEntityList.size() == 0) {
+            return lemmaEntityList;
+        }
+
+        lemmaEntityList.sort((l1, l2) -> {
+            if (l1.getFrequency() < l2.getFrequency()) return 1;
+            return 0;
+        });
+        return lemmaEntityList;
+    }
+
+    private List<SearchData> collectData(SiteEntity siteEntity, List<SearchData> data, List<LemmaEntity> lemmaEntityList, List<PageEntity> pageEntityList) {
         int absRelevance;
         int maxAbsRelevance = 0;
-
         for (PageEntity page : pageEntityList) {
             absRelevance = 0;
             for (LemmaEntity lemma : lemmaEntityList) {

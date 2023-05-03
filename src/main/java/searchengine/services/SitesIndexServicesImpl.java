@@ -81,18 +81,7 @@ public class SitesIndexServicesImpl implements SitesIndexService {
 
     private ResponseEntity multithreadingIndexing() {
         ExecutorService service = Executors.newFixedThreadPool(sites.getSites().size());
-        for (Site value : sites.getSites()) {
-            Runnable task = () -> {
-                SiteEntity site = new SiteEntity(value.getUrl(), value.getName());
-                siteRepository.saveAndFlush(site);
-
-                int count = new ForkJoinPool().invoke(new UrlCrawler(site, "/", pageRepository, siteRepository));
-                if (stopFlag) return;
-
-                updateSiteStatus(site, Status.INDEXING);
-            };
-            service.submit(task);
-        }
+        multithreadingPageIndexing(service);
         if (stopFlag) return returnResponse("Индексация остановлена пользователем", HttpStatus.OK);
 
         ResponseEntity response = checkThreads(service);
@@ -101,6 +90,14 @@ public class SitesIndexServicesImpl implements SitesIndexService {
         service = Executors.newFixedThreadPool(sites.getSites().size());
 
         List<SiteEntity> siteEntityList = siteRepository.findAll();
+        multithreadingLemmaIndexing(service, siteEntityList);
+
+        if (stopFlag) return returnResponse("Индексация остановлена пользователем", HttpStatus.OK);
+        response = checkThreads(service);
+        return response;
+    }
+
+    private void multithreadingLemmaIndexing(ExecutorService service, List<SiteEntity> siteEntityList) {
         for (SiteEntity site : siteEntityList) {
             Runnable task = () -> {
                 if (stopFlag) return;
@@ -113,10 +110,21 @@ public class SitesIndexServicesImpl implements SitesIndexService {
             };
             service.submit(task);
         }
+    }
 
-        if (stopFlag) return returnResponse("Индексация остановлена пользователем", HttpStatus.OK);
-        response = checkThreads(service);
-        return response;
+    private void multithreadingPageIndexing(ExecutorService service) {
+        for (Site value : sites.getSites()) {
+            Runnable task = () -> {
+                SiteEntity site = new SiteEntity(value.getUrl(), value.getName());
+                siteRepository.saveAndFlush(site);
+
+                int count = new ForkJoinPool().invoke(new UrlCrawler(site, "/", pageRepository, siteRepository));
+                if (stopFlag) return;
+
+                updateSiteStatus(site, Status.INDEXING);
+            };
+            service.submit(task);
+        }
     }
 
     @Transactional
@@ -153,10 +161,7 @@ public class SitesIndexServicesImpl implements SitesIndexService {
             lemma.setFrequency(lemma.getFrequency() + 1);
             lemmaRepository.save(lemma);
 
-            IndexEntity index = new IndexEntity();
-            index.setPage(page);
-            index.setLemma(lemma);
-            index.setRank(entry.getValue());
+            IndexEntity index = new IndexEntity(page, lemma, entry.getValue());
             indexRepository.save(index);
         }
     }
@@ -181,13 +186,7 @@ public class SitesIndexServicesImpl implements SitesIndexService {
         updateSiteStatus(site, Status.INDEXING);
 
         try {
-            Document doc;
-            String content = "";
-            doc = Jsoup.connect(url).get();
-            int code = doc.location().startsWith("https") ? 200 : 404;
-            content = doc.toString();
-            page = new PageEntity(site, path, code, content);
-            pageRepository.saveAndFlush(page);
+            page = indexPage(url, path, site);
         } catch (Exception e) {
             updateSiteStatus(site, Status.FAILED, e.getMessage());
             return returnResponse(e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);
@@ -197,6 +196,18 @@ public class SitesIndexServicesImpl implements SitesIndexService {
         updateSiteStatus(site, Status.INDEXED);
 
         return ResponseEntity.ok(new SuccessResponse());
+    }
+
+    private PageEntity indexPage(String url, String path, SiteEntity site) throws IOException {
+        PageEntity page;
+        Document doc;
+        String content = "";
+        doc = Jsoup.connect(url).get();
+        int code = doc.location().startsWith("https") ? 200 : 404;
+        content = doc.toString();
+        page = new PageEntity(site, path, code, content);
+        pageRepository.saveAndFlush(page);
+        return page;
     }
 
     public String isPageIndexed(String url) {
@@ -221,9 +232,7 @@ public class SitesIndexServicesImpl implements SitesIndexService {
     @Transactional
     public void deleteByPageIndex(String url, String path) {
         SiteEntity site = siteRepository.findByUrl(url);
-        site.setStatus(Status.INDEXING);
-        site.setStatusTime(new Date());
-        siteRepository.saveAndFlush(site);
+        updateSiteStatus(site, Status.INDEXING);
         if (pageRepository.existsBySiteAndPath(site, path + "/"))
             path = path.concat("/");
 
@@ -236,12 +245,10 @@ public class SitesIndexServicesImpl implements SitesIndexService {
             }
 
             indexRepository.deleteAllByPage(page);
-
             for (LemmaEntity lemma : lemmaList) {
                 if (lemma.getFrequency() > 1) lemma.setFrequency(lemma.getFrequency() - 1);
                 else lemmaRepository.delete(lemma);
             }
-
             pageRepository.delete(page);
         }
     }
