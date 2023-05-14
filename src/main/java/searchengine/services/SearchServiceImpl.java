@@ -82,7 +82,7 @@ public class SearchServiceImpl implements SearchService {
         String snippet = "<html><body>\"<b>";
         if (lemmaEntityList.size() > 3) lemmaEntityList = lemmaEntityList.subList(0, 3);
         for (LemmaEntity lemma : lemmaEntityList) {
-            int index = text.indexOf(lemma.getLemma());
+            int index = text.toLowerCase().indexOf(lemma.getLemma());
             int start = Math.max(0, index - 70);
             int end = Math.min(text.length(), index + lemma.getLemma().length() + 70);
             String textSnippet = text.substring(start, end);
