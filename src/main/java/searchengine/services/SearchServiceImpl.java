@@ -3,6 +3,10 @@ package searchengine.services;
 import lombok.RequiredArgsConstructor;
 import org.jsoup.Jsoup;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
@@ -15,8 +19,8 @@ import searchengine.repositories.SiteRepository;
 import searchengine.config.Site;
 import searchengine.config.SitesList;
 import searchengine.dto.error.ErrorResponse;
-import searchengine.dto.seach.SearchData;
-import searchengine.dto.seach.SearchResponse;
+import searchengine.dto.search.SearchData;
+import searchengine.dto.search.SearchResponse;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -38,7 +42,7 @@ public class SearchServiceImpl implements SearchService {
     IndexRepository indexRepository;
 
     @Override
-    public ResponseEntity getSearch(String query, String site) {
+    public ResponseEntity getSearch(String query, String site, int offset, int limit) {
         List<SearchData> data = new ArrayList<>();
 
         LemmaFinder lemmaFinder;
@@ -59,8 +63,18 @@ public class SearchServiceImpl implements SearchService {
             data.addAll(collectSiteSearchData(siteEntity, lemmas));
         }
         data.sort(Comparator.comparingDouble(SearchData::getRelevance).reversed());
-        SearchResponse response = new SearchResponse(true, data.size(), data);
+        SearchResponse response = getPaginatedSearchResponse(offset, limit, data);
         return ResponseEntity.ok(response);
+    }
+
+    private static SearchResponse getPaginatedSearchResponse(int offset, int limit, List<SearchData> data) {
+        Pageable pageable = PageRequest.of(offset, limit);
+        int start = (int) pageable.getOffset();
+        int end = Math.min((start + pageable.getPageSize()), data.size());
+        Page<SearchData> page = new PageImpl<>(data.subList(start, end), pageable, data.size());
+
+        SearchResponse response = new SearchResponse(true, (int) page.getTotalElements(), page.getContent());
+        return response;
     }
 
     private SearchData collectPageSearchData(SiteEntity siteEntity, PageEntity page, List<LemmaEntity> lemmaEntityList, double relevance) {
@@ -82,7 +96,7 @@ public class SearchServiceImpl implements SearchService {
         String snippet = "<html><body>\"<b>";
         if (lemmaEntityList.size() > 3) lemmaEntityList = lemmaEntityList.subList(0, 3);
         for (LemmaEntity lemma : lemmaEntityList) {
-            int index = text.indexOf(lemma.getLemma());
+            int index = text.toLowerCase().indexOf(lemma.getLemma());
             int start = Math.max(0, index - 70);
             int end = Math.min(text.length(), index + lemma.getLemma().length() + 70);
             String textSnippet = text.substring(start, end);
