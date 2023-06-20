@@ -80,6 +80,7 @@ public class SitesIndexServicesImpl implements SitesIndexService {
     }
 
     private ResponseEntity multithreadingIndexing() {
+        
         ExecutorService service = Executors.newFixedThreadPool(sites.getSites().size());
         multithreadingPageIndexing(service);
         if (stopFlag) return returnResponse("Индексация остановлена пользователем", HttpStatus.OK);
