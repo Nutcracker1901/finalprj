@@ -19,8 +19,6 @@ import searchengine.dto.error.ErrorResponse;
 import searchengine.dto.success.SuccessResponse;
 import searchengine.model.*;
 
-import javax.persistence.EntityManager;
-import javax.persistence.PersistenceContext;
 import javax.transaction.Transactional;
 import java.io.IOException;
 import java.util.*;
@@ -41,8 +39,6 @@ public class SitesIndexServicesImpl implements SitesIndexService {
     private LemmaRepository lemmaRepository;
     @Autowired
     private IndexRepository indexRepository;
-    @PersistenceContext
-    private EntityManager em;
     private volatile boolean stopFlag = false;
     private volatile boolean indexing = false;
     private LemmaFinder lemmaFinder;
