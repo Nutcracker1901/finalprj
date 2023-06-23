@@ -27,6 +27,8 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 @RequiredArgsConstructor
@@ -93,7 +95,8 @@ public class SearchServiceImpl implements SearchService {
     }
 
     private static String getSnippet(List<LemmaEntity> lemmaEntityList, String text) {
-        String snippet = "<html><body>\"<b>";
+        String snippet = "<html><body>\"";
+        List<LemmaEntity> lemmaEntities = lemmaEntityList;
         if (lemmaEntityList.size() > 3) lemmaEntityList = lemmaEntityList.subList(0, 3);
         for (LemmaEntity lemma : lemmaEntityList) {
             int index = text.toLowerCase().indexOf(lemma.getLemma());
@@ -111,8 +114,9 @@ public class SearchServiceImpl implements SearchService {
             if (lSpace != -1) start += lSpace + 1;
             else if (lDot != -1) start += lDot + 1;
             snippet = snippet.concat(text.substring(start, end) + "\n");
+            snippet = snippet.replaceAll ("(?i)" + Pattern.quote (lemma.getLemma()), "<b>" + lemma.getLemma() + "</b>");
         }
-        snippet = snippet.concat("</b>\"</body></html>");
+        snippet = snippet.concat("\"</body></html>");
         return snippet;
     }
 
